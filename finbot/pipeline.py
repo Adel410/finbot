@@ -1,4 +1,5 @@
 from pathlib import Path
+from time import perf_counter
 from uuid import uuid4
 
 from config.settings import settings
@@ -29,7 +30,21 @@ def run_pipeline(
 
     market_data = collector.collect()
     prompts = [prompt_builder.build(item) for item in market_data]
-    response = provider.analyze_batch(market_data, prompts)
+    started = perf_counter()
+    try:
+        response = provider.analyze_batch(market_data, prompts)
+    except Exception as exc:
+        metrics = getattr(provider, "last_call_metrics", None) or AICallMetrics()
+        audit_recorder.record_failure(
+            run_id=run_id,
+            provider=provider.name,
+            model=provider.model,
+            prompts=prompts,
+            error_type=type(exc).__name__,
+            duration_seconds=perf_counter() - started,
+            metrics=metrics,
+        )
+        raise
     metrics = getattr(provider, "last_call_metrics", None) or AICallMetrics()
     decisions = [validator.validate(decision) for decision in response.decisions]
     audit_recorder.record(run_id, provider.name, provider.model, prompts, metrics)
@@ -45,6 +60,7 @@ def run_pipeline(
         estimated_cost_usd=metrics.estimated_cost_usd,
         actual_cost_usd=metrics.actual_cost_usd,
         duration_seconds=metrics.duration_seconds,
+        market_data=market_data,
         decisions=decisions,
     )
     return execution, storage.save(execution)

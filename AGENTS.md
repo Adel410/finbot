@@ -17,6 +17,10 @@
 - Give every execution and its audit the same non-sensitive `run_id`.
 - Keep run metadata explicit for both market-data and AI providers.
 - Use zero usage metrics and `actual_cost_usd=null` for simulated AI runs.
+- Store the exact collected market-data snapshot in every successful run.
+- Warn at 80% of locally audited monthly xAI spend and block at 100% before calls.
+- Treat the local cost limit as a risk reduction, not an absolute guarantee.
+- Keep failure audits structured and sanitized; never persist stack traces.
 - Do not add real trading, broker access, external market data, or AI API calls
   unless a future task explicitly requests them.
 - Never execute a real financial transaction.

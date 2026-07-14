@@ -22,6 +22,9 @@ class AIAuditRecord(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     provider: str
     model: str
+    success: bool = True
+    error_type: str | None = None
+    message: str | None = None
     prompts: list[Prompt]
     request_count: int = 0
     input_tokens: int = 0
@@ -51,6 +54,35 @@ class AIAuditRecorder:
             run_id=run_id,
             provider=provider,
             model=model,
+            prompts=prompts,
+            **metrics.model_dump(),
+        )
+        self.usage_dir.mkdir(parents=True, exist_ok=True)
+        output_path = self.usage_dir / f"ai_audit_{run_id}.json"
+        output_path.write_text(
+            json.dumps(record.model_dump(mode="json"), indent=2), encoding="utf-8"
+        )
+        return output_path
+
+    def record_failure(
+        self,
+        run_id: str,
+        provider: str,
+        model: str,
+        prompts: list[Prompt],
+        error_type: str,
+        duration_seconds: float,
+        metrics: AICallMetrics | None = None,
+    ) -> Path:
+        metrics = metrics or AICallMetrics()
+        metrics = metrics.model_copy(update={"duration_seconds": duration_seconds})
+        record = AIAuditRecord(
+            run_id=run_id,
+            provider=provider,
+            model=model,
+            success=False,
+            error_type=error_type,
+            message="AI provider call failed",
             prompts=prompts,
             **metrics.model_dump(),
         )

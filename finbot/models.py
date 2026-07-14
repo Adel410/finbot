@@ -45,4 +45,5 @@ class PipelineRun(BaseModel):
     estimated_cost_usd: float = Field(ge=0)
     actual_cost_usd: float | None = Field(default=None, ge=0)
     duration_seconds: float = Field(ge=0)
+    market_data: list[MarketData] = Field(min_length=1)
     decisions: list[Decision] = Field(min_length=1)

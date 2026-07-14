@@ -131,3 +131,79 @@ def test_logs_and_json_never_contain_secret(tmp_path, caplog) -> None:
     assert secret not in caplog.text
     assert secret not in output_path.read_text()
     assert secret not in audit_text
+
+
+def test_collected_data_is_the_data_prompted_sent_and_stored(tmp_path) -> None:
+    collector = SimulatedMarketDataCollector()
+    collected = collector.collect()
+
+    class FixedCollector(SimulatedMarketDataCollector):
+        def collect(self):
+            return collected
+
+    class CapturingProvider(MockGrokProvider):
+        def analyze_batch(self, markets, prompts):
+            self.received_markets = markets
+            self.received_prompts = prompts
+            return super().analyze_batch(markets, prompts)
+
+    provider = CapturingProvider()
+    run, output_path = run_pipeline(
+        tmp_path / "runs",
+        collector=FixedCollector(),
+        provider=provider,
+        audit_recorder=AIAuditRecorder(tmp_path / "usage"),
+    )
+
+    stored = json.loads(output_path.read_text(encoding="utf-8"))
+    assert provider.received_markets is collected
+    assert run.market_data == collected == provider.received_markets
+    assert stored["market_data"] == [item.model_dump(mode="json") for item in collected]
+    for market, prompt in zip(provider.received_markets, provider.received_prompts):
+        assert market.symbol in prompt.user_prompt
+        assert f"current_price={market.current_price:.2f}" in prompt.user_prompt
+        assert market.last_data_date.isoformat() in prompt.user_prompt
+
+
+def test_mocked_yfinance_snapshot_preserves_values_and_date(tmp_path) -> None:
+    run, output_path = run_pipeline(
+        tmp_path / "runs",
+        collector=mocked_yfinance_collector(),
+        provider=SimulatedAIProvider(),
+        audit_recorder=AIAuditRecorder(tmp_path / "usage"),
+    )
+
+    first = run.market_data[0]
+    stored = json.loads(output_path.read_text(encoding="utf-8"))["market_data"][0]
+    assert first.previous_close == 104
+    assert first.current_price == 105
+    assert first.one_day_change_percent == pytest.approx((105 - 104) / 104 * 100)
+    assert first.five_day_change_percent == pytest.approx(5.0)
+    assert first.last_data_date.isoformat() == "2026-07-08"
+    assert stored == first.model_dump(mode="json")
+
+
+def test_failed_provider_call_has_sanitized_audit(tmp_path) -> None:
+    secret = "must-not-be-audited"
+
+    class FailingProvider(MockGrokProvider):
+        def analyze_batch(self, markets, prompts):
+            self.last_call_metrics = AICallMetrics(request_count=1)
+            raise RuntimeError(secret)
+
+    usage_dir = tmp_path / "usage"
+    with pytest.raises(RuntimeError, match=secret):
+        run_pipeline(
+            tmp_path / "runs",
+            collector=SimulatedMarketDataCollector(),
+            provider=FailingProvider(),
+            audit_recorder=AIAuditRecorder(usage_dir),
+        )
+
+    audit_text = next(usage_dir.glob("*.json")).read_text(encoding="utf-8")
+    audit = json.loads(audit_text)
+    assert audit["success"] is False
+    assert audit["error_type"] == "RuntimeError"
+    assert audit["message"] == "AI provider call failed"
+    assert audit["request_count"] == 1
+    assert secret not in audit_text

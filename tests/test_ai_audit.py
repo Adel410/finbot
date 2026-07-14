@@ -28,6 +28,7 @@ def test_simulated_pipeline_has_zero_ai_usage_and_needs_no_network(
     run = json.loads(run_file.read_text(encoding="utf-8"))
     assert audit["run_id"] == run["run_id"]
     assert audit["provider"] == "simulated"
+    assert audit["success"] is True
     assert audit["model"] == "deterministic-local"
     assert len(audit["prompts"]) == 3
     assert audit["request_count"] == 0

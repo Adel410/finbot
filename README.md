@@ -7,8 +7,10 @@ The processing stages are explicit: market collection, prompt construction,
 simulated AI analysis, validation, and local storage. Runtime information is
 written to a daily file in `logs` and displayed in the console.
 
-An optional yfinance collector can retrieve daily closing data. No real AI,
-broker, database, or trading system is connected, and FinBot cannot execute a trade.
+An optional yfinance collector can retrieve daily closing data, and Grok is
+available through the official xAI SDK. No broker or real trading system is
+connected. FinBot remains an experimental research platform and cannot execute
+a trade.
 
 ## Requirements
 
@@ -70,10 +72,21 @@ The first paid validation in Sprint 3B tested combination 3, simulated market
 data with Grok. Combination 4 has not yet been validated with a real xAI call.
 
 Every run JSON records a random non-sensitive `run_id`, both providers, model,
-dry-run state, requests, tokens, costs, duration, and decisions. The matching
-audit file uses the same `run_id`. For simulated AI, the documented convention
-is zero requests, tokens, estimated cost, and duration, with `actual_cost_usd`
-set to `null`.
+dry-run state, requests, tokens, costs, duration, the exact market-data snapshot,
+and decisions. The matching audit file uses the same `run_id`. For simulated AI,
+the documented convention is zero requests, tokens, estimated cost, and duration,
+with `actual_cost_usd` set to `null`.
+
+The local monthly budget guard checks already-audited spend before each call,
+warns at 80%, and blocks new calls once the recorded total has reached the limit.
+The exact cost of the current call is known only after its response, so that call
+can take the total slightly above the configured limit. This reduces risk but is
+not an absolute spending guarantee and does not replace limits, alerts, or other
+protections configured on the xAI account.
+
+Failed provider calls receive a structured local audit containing the run ID,
+UTC timestamp, provider, model, safe error type/message, duration, known usage,
+and prompts. It never stores credentials, headers, stack traces, or API keys.
 
 ## Test
 

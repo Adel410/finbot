@@ -27,6 +27,7 @@ def test_pipeline_writes_a_valid_json_run(tmp_path) -> None:
         "estimated_cost_usd",
         "actual_cost_usd",
         "duration_seconds",
+        "market_data",
         "decisions",
     }
     assert expected_metadata <= stored.keys()
@@ -39,6 +40,9 @@ def test_pipeline_writes_a_valid_json_run(tmp_path) -> None:
     assert stored["estimated_cost_usd"] == 0.0
     assert stored["actual_cost_usd"] is None
     assert stored["duration_seconds"] == 0.0
+    assert stored["market_data"] == [
+        item.model_dump(mode="json") for item in execution.market_data
+    ]
     assert len(execution.decisions) == 3
     assert [item.action.value for item in execution.decisions] == [
         "BUY",

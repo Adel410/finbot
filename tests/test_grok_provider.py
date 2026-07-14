@@ -134,6 +134,43 @@ def test_budget_exceeded_prevents_client_creation(tmp_path) -> None:
         provider.analyze_batch([market], [prompt])
 
 
+def test_budget_warning_before_call_at_eighty_percent(tmp_path, caplog) -> None:
+    caplog.set_level(logging.WARNING)
+    market, prompt = market_and_prompt()
+    provider = provider_for(FakeChat(FakeResponse(valid_content())), tmp_path)
+    provider.budget.spent_usd = lambda: 4.0
+
+    provider.analyze_batch([market], [prompt])
+
+    assert "80.0%" in caplog.text
+    assert "before call" in caplog.text
+
+
+def test_budget_warning_after_call_reaches_eighty_percent(tmp_path, caplog) -> None:
+    caplog.set_level(logging.WARNING)
+    market, prompt = market_and_prompt()
+    response = FakeResponse(valid_content())
+    response.cost_usd = 0.3
+    provider = provider_for(FakeChat(response), tmp_path)
+    provider.budget.limit_usd = 1.0
+    provider.budget.spent_usd = lambda: 0.75
+
+    provider.analyze_batch([market], [prompt])
+
+    assert "after call" in caplog.text
+
+
+def test_no_budget_warning_below_eighty_percent(tmp_path, caplog) -> None:
+    caplog.set_level(logging.WARNING)
+    market, prompt = market_and_prompt()
+    provider = provider_for(FakeChat(FakeResponse(valid_content())), tmp_path)
+    provider.budget.spent_usd = lambda: 3.0
+
+    provider.analyze_batch([market], [prompt])
+
+    assert "Monthly xAI API spend" not in caplog.text
+
+
 def test_dry_run_never_creates_client(tmp_path, caplog) -> None:
     caplog.set_level(logging.INFO)
     market, prompt = market_and_prompt()

@@ -15,6 +15,7 @@ from .models import AIResponse, Decision, MarketData
 from .prompt_builder import Prompt
 
 logger = logging.getLogger(__name__)
+BUDGET_WARNING_RATIO = 0.80
 
 
 class GrokProviderError(RuntimeError):
@@ -79,6 +80,7 @@ class GrokAIProvider(AIProvider):
         self.client_factory = client_factory
         self.timeout_seconds = timeout_seconds
         self.last_call_metrics = AICallMetrics()
+        self._spent_before_call = 0.0
 
     def analyze(self, market: MarketData, prompt: Prompt | None = None) -> Decision:
         if prompt is None:
@@ -89,6 +91,7 @@ class GrokAIProvider(AIProvider):
         self, markets: list[MarketData], prompts: list[Prompt]
     ) -> AIResponse:
         self._validate_before_request(markets, prompts)
+        self.last_call_metrics = AICallMetrics(request_count=1)
         started = time.perf_counter()
         try:
             client = self.client_factory(
@@ -138,6 +141,12 @@ class GrokAIProvider(AIProvider):
             duration_seconds=time.perf_counter() - started,
             raw_response=response.content,
         )
+        call_cost = (
+            actual_cost
+            if actual_cost is not None
+            else self.last_call_metrics.estimated_cost_usd
+        )
+        self._warn_if_budget_high(self._spent_before_call + call_cost, "after")
         return parsed
 
     def _validate_before_request(
@@ -156,6 +165,19 @@ class GrokAIProvider(AIProvider):
         if spent >= self.budget.limit_usd:
             raise GrokBudgetExceededError(
                 f"Monthly API budget is exhausted ({spent:.6f} USD used)"
+            )
+        self._spent_before_call = spent
+        self._warn_if_budget_high(spent, "before")
+
+    def _warn_if_budget_high(self, spent: float, stage: str) -> None:
+        if spent >= self.budget.limit_usd * BUDGET_WARNING_RATIO:
+            logger.warning(
+                "Monthly xAI API spend is at %.1f%% of the local limit %s call "
+                "(%.6f / %.6f USD).",
+                spent / self.budget.limit_usd * 100,
+                stage,
+                spent,
+                self.budget.limit_usd,
             )
 
     @staticmethod
