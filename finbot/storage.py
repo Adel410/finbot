@@ -16,8 +16,7 @@ class RunStorage:
 
 def save_run(run: PipelineRun, runs_dir: Path = Path("data/runs")) -> Path:
     runs_dir.mkdir(parents=True, exist_ok=True)
-    timestamp = run.created_at.strftime("%Y%m%dT%H%M%S_%fZ")
-    output_path = runs_dir / f"run_{timestamp}.json"
+    output_path = runs_dir / f"run_{run.run_id}.json"
     output_path.write_text(
         json.dumps(run.model_dump(mode="json"), indent=2),
         encoding="utf-8",

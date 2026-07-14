@@ -16,7 +16,7 @@ class PromptBuilder:
     def build(self, market: MarketData) -> Prompt:
         return Prompt(
             system_prompt=(
-                "Analyze market data and return one structured decision containing "
+                "For each market-data item, return one structured decision containing "
                 "symbol, action, confidence, and a short justification."
             ),
             user_prompt=(

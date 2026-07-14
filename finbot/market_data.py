@@ -38,6 +38,8 @@ class MarketDataNetworkError(MarketDataCollectionError):
 class MarketDataCollector(ABC):
     """Contract implemented by every market-data source."""
 
+    name: str
+
     @abstractmethod
     def collect(self) -> list[MarketData]:
         raise NotImplementedError
@@ -46,12 +48,16 @@ class MarketDataCollector(ABC):
 class SimulatedMarketDataCollector(MarketDataCollector):
     """Collect deterministic local data for tests and offline development."""
 
+    name = "simulated"
+
     def collect(self) -> list[MarketData]:
         return load_market_data()
 
 
 class YFinanceMarketDataCollector(MarketDataCollector):
     """Collect daily closing prices from yfinance."""
+
+    name = "yfinance"
 
     def __init__(
         self,

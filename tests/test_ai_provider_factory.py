@@ -13,6 +13,8 @@ def test_factory_selects_simulated_provider() -> None:
 
 def test_factory_selects_non_operational_grok_provider() -> None:
     assert isinstance(
-        AIProviderFactory.create(Settings(ai_provider="grok")), GrokAIProvider
+        AIProviderFactory.create(
+            Settings(ai_provider="grok", xai_model="grok-test", xai_dry_run=True)
+        ),
+        GrokAIProvider,
     )
-

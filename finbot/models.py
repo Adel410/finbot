@@ -33,5 +33,16 @@ class AIResponse(BaseModel):
 
 
 class PipelineRun(BaseModel):
+    run_id: str = Field(min_length=32, max_length=32)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    market_data_provider: str = Field(min_length=1)
+    ai_provider: str = Field(min_length=1)
+    model: str = Field(min_length=1)
+    dry_run: bool
+    request_count: int = Field(ge=0)
+    input_tokens: int = Field(ge=0)
+    output_tokens: int = Field(ge=0)
+    estimated_cost_usd: float = Field(ge=0)
+    actual_cost_usd: float | None = Field(default=None, ge=0)
+    duration_seconds: float = Field(ge=0)
     decisions: list[Decision] = Field(min_length=1)

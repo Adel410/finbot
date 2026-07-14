@@ -11,7 +11,12 @@
 - Mock yfinance responses in tests; never make the test suite depend on Internet.
 - Never replace failed real-market collection with simulated data silently.
 - Keep AI providers behind the provider contract and factory.
-- Grok must remain non-operational until a future task explicitly authorizes it.
+- Use only the official xAI SDK for Grok and keep all tests fully mocked offline.
+- Check the monthly budget before every real AI request; never retry silently.
+- Never log or persist API keys or authorization headers.
+- Give every execution and its audit the same non-sensitive `run_id`.
+- Keep run metadata explicit for both market-data and AI providers.
+- Use zero usage metrics and `actual_cost_usd=null` for simulated AI runs.
 - Do not add real trading, broker access, external market data, or AI API calls
   unless a future task explicitly requests them.
 - Never execute a real financial transaction.

@@ -31,9 +31,9 @@ python -m finbot
 
 Generated files are written to `data/runs`.
 
-Configuration defaults are centralized in `config/settings.py`. The
-`config/.env.example` file documents names reserved for future configuration;
-no environment loader or external service is required in this sprint.
+Configuration defaults and validation are centralized in `config/settings.py`.
+The ignored `.env` file holds private AI configuration; only
+`config/.env.example` is tracked.
 
 Select the market source before running FinBot. Simulated data remains the safe,
 offline default:
@@ -46,17 +46,34 @@ python -m finbot
 The yfinance mode requires network access and fails explicitly if a symbol has
 no usable history, a value is missing or invalid, or the remote request fails.
 
-## AI provider preparation
+## AI providers
 
-Sprint 3A keeps `AI_PROVIDER=simulated` as the default. The provider contract,
-factory, generic prompts, and local audit format are ready for future providers.
-The Grok class is deliberately non-operational: it has no xAI dependency, no
-HTTP code, and every analysis attempt raises `NotImplementedError`.
+`AI_PROVIDER=simulated` remains the default. Grok uses the official xAI Python
+SDK only and sends one structured request for all collected symbols. Configure
+the ignored `.env` file with `AI_PROVIDER`, `XAI_API_KEY`, `XAI_MODEL`,
+`XAI_DRY_RUN`, and `MAX_MONTHLY_API_COST_USD`.
 
-No xAI account or API key is needed. No real AI request or AI expense is possible
-in this sprint. Simulated audit records contain the provider, model, prompts, and
-zero values for requests, tokens, and cost; these generated files are ignored in
-`data/usage`.
+When `XAI_DRY_RUN=true`, no xAI client or request is created. Before a real
+request, FinBot checks current-month audited spend against the configured limit.
+Successful calls record prompts, the raw non-sensitive response, token counts,
+estimated and reported cost, and duration under ignored `data/usage` files.
+API keys and request headers are never audited or logged.
+
+## Supported provider combinations
+
+1. Simulated market data + simulated AI: fully local and deterministic.
+2. yfinance market data + simulated AI: real daily prices, local decisions.
+3. Simulated market data + Grok: real AI over fixed offline prices.
+4. yfinance market data + Grok: real prices and real AI.
+
+The first paid validation in Sprint 3B tested combination 3, simulated market
+data with Grok. Combination 4 has not yet been validated with a real xAI call.
+
+Every run JSON records a random non-sensitive `run_id`, both providers, model,
+dry-run state, requests, tokens, costs, duration, and decisions. The matching
+audit file uses the same `run_id`. For simulated AI, the documented convention
+is zero requests, tokens, estimated cost, and duration, with `actual_cost_usd`
+set to `null`.
 
 ## Test
 
