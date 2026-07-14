@@ -16,9 +16,10 @@ def test_prompt_builder_contains_all_market_values() -> None:
 
     prompt = PromptBuilder().build(market)
 
-    assert "AAPL" in prompt
-    assert "225.00" in prompt
-    assert "230.40" in prompt
-    assert "2.4000" in prompt
-    assert "3.2000" in prompt
-    assert "2026-07-13" in prompt
+    assert prompt.system_prompt
+    assert "AAPL" in prompt.user_prompt
+    assert "225.00" in prompt.user_prompt
+    assert "230.40" in prompt.user_prompt
+    assert "2.4000" in prompt.user_prompt
+    assert "3.2000" in prompt.user_prompt
+    assert "2026-07-13" in prompt.user_prompt

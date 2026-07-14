@@ -20,3 +20,8 @@ def test_yfinance_provider_can_be_selected(monkeypatch) -> None:
     assert isinstance(
         create_market_data_collector("yfinance"), YFinanceMarketDataCollector
     )
+
+
+def test_simulated_ai_provider_is_default(monkeypatch) -> None:
+    monkeypatch.delenv("AI_PROVIDER", raising=False)
+    assert Settings().ai_provider == "simulated"

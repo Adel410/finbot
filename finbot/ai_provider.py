@@ -1,10 +1,15 @@
+from .ai_provider_contract import AIProvider
 from .models import Action, Decision, MarketData
+from .prompt_builder import Prompt
 
 
-class SimulatedAIProvider:
+class SimulatedAIProvider(AIProvider):
     """Deterministic provider designed to be replaced by a real provider later."""
 
-    def analyze(self, market: MarketData) -> Decision:
+    name = "simulated"
+    model = "deterministic-local"
+
+    def analyze(self, market: MarketData, prompt: Prompt | None = None) -> Decision:
         change_percent = (
             (market.current_price - market.previous_close) / market.previous_close * 100
         )
@@ -26,4 +31,3 @@ class SimulatedAIProvider:
             confidence=confidence,
             justification=justification,
         )
-

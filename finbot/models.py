@@ -26,6 +26,12 @@ class Decision(BaseModel):
     justification: str = Field(min_length=1, max_length=160)
 
 
+class AIResponse(BaseModel):
+    """Provider-independent structured AI response."""
+
+    decisions: list[Decision] = Field(min_length=1)
+
+
 class PipelineRun(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     decisions: list[Decision] = Field(min_length=1)

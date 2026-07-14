@@ -3,5 +3,13 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 .coverage
+
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+
 data/runs/*.json
+data/usage/
 logs/*.log

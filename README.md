@@ -46,6 +46,18 @@ python -m finbot
 The yfinance mode requires network access and fails explicitly if a symbol has
 no usable history, a value is missing or invalid, or the remote request fails.
 
+## AI provider preparation
+
+Sprint 3A keeps `AI_PROVIDER=simulated` as the default. The provider contract,
+factory, generic prompts, and local audit format are ready for future providers.
+The Grok class is deliberately non-operational: it has no xAI dependency, no
+HTTP code, and every analysis attempt raises `NotImplementedError`.
+
+No xAI account or API key is needed. No real AI request or AI expense is possible
+in this sprint. Simulated audit records contain the provider, model, prompts, and
+zero values for requests, tokens, and cost; these generated files are ignored in
+`data/usage`.
+
 ## Test
 
 ```powershell
