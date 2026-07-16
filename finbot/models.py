@@ -1,13 +1,95 @@
 from datetime import date, datetime, timezone
+from decimal import Decimal
 from enum import Enum
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class Action(str, Enum):
     BUY = "BUY"
     SELL = "SELL"
     HOLD = "HOLD"
+
+
+def _uppercase_symbol(value: str) -> str:
+    symbol = value.strip().upper()
+    if not symbol:
+        raise ValueError("symbol must not be empty")
+    return symbol
+
+
+class Position(BaseModel):
+    """A long-only portfolio position."""
+
+    symbol: str
+    quantity: Decimal = Field(gt=0)
+    average_price: Decimal = Field(gt=0)
+
+    normalize_symbol = field_validator("symbol", mode="before")(_uppercase_symbol)
+
+
+class Portfolio(BaseModel):
+    cash: Decimal = Field(ge=0)
+    positions: list[Position] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def reject_duplicate_positions(self) -> "Portfolio":
+        symbols = [position.symbol for position in self.positions]
+        if len(symbols) != len(set(symbols)):
+            raise ValueError("portfolio positions must have unique symbols")
+        return self
+
+    def get_position(self, symbol: str) -> Position | None:
+        normalized = _uppercase_symbol(symbol)
+        return next(
+            (position for position in self.positions if position.symbol == normalized),
+            None,
+        )
+
+    @property
+    def position_symbols(self) -> set[str]:
+        return {position.symbol for position in self.positions}
+
+
+class RiskLimits(BaseModel):
+    max_position_pct: Decimal = Field(default=Decimal("0.20"), gt=0, le=1)
+    max_order_pct: Decimal = Field(default=Decimal("0.10"), gt=0, le=1)
+    min_order_value: Decimal = Field(default=Decimal("10"), ge=0)
+    allow_fractional_shares: bool = False
+
+
+class RiskStatus(str, Enum):
+    APPROVED = "APPROVED"
+    REDUCED = "REDUCED"
+    REJECTED = "REJECTED"
+    NO_ACTION = "NO_ACTION"
+
+
+class RiskEvaluation(BaseModel):
+    symbol: str
+    requested_action: Action
+    status: RiskStatus
+    quantity: Decimal = Field(ge=0)
+    price: Decimal | None = Field(default=None, gt=0)
+    order_value: Decimal = Field(ge=0)
+    reason: str = Field(min_length=1)
+    portfolio_value_before: Decimal = Field(ge=0)
+    position_value_before: Decimal = Field(ge=0)
+    position_value_after: Decimal = Field(ge=0)
+
+    normalize_symbol = field_validator("symbol", mode="before")(_uppercase_symbol)
+
+    @model_validator(mode="after")
+    def validate_order_consistency(self) -> "RiskEvaluation":
+        if self.status in {RiskStatus.REJECTED, RiskStatus.NO_ACTION}:
+            if self.quantity != 0 or self.order_value != 0:
+                raise ValueError("rejected and no-action evaluations must have zero size")
+        else:
+            if self.price is None:
+                raise ValueError("approved and reduced evaluations require a price")
+            if self.quantity <= 0 or self.order_value <= 0:
+                raise ValueError("approved and reduced evaluations require positive size")
+        return self
 
 
 class MarketData(BaseModel):

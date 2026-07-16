@@ -21,6 +21,9 @@
 - Warn at 80% of locally audited monthly xAI spend and block at 100% before calls.
 - Treat the local cost limit as a risk reduction, not an absolute guarantee.
 - Keep failure audits structured and sanitized; never persist stack traces.
+- Keep the risk engine deterministic and independent from AI providers and networks.
+- Use `Decimal`, never `float`, for portfolio, order, price, and risk calculations.
+- Never let AI confidence bypass risk limits or make the risk engine execute orders.
 - Do not add real trading, broker access, external market data, or AI API calls
   unless a future task explicitly requests them.
 - Never execute a real financial transaction.

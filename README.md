@@ -93,3 +93,19 @@ and prompts. It never stores credentials, headers, stack traces, or API keys.
 ```powershell
 python -m pytest
 ```
+
+## Offline risk engine
+
+`RiskEngine` is a deterministic, AI-independent authority that evaluates
+validated `BUY`, `SELL`, and `HOLD` recommendations against an explicit
+long-only portfolio and current prices supplied by the caller. It uses `Decimal`
+throughout, caps new orders and position exposure, respects available cash and
+minimum order value, optionally supports fractional shares, rejects short sales,
+and sells an existing position in full.
+
+The engine only proposes risk-approved order quantities; it does not execute
+orders and is not automatically connected to the AI pipeline. There is no broker
+or complete paper-trading engine in this sprint. Partial sales, leverage, margin,
+fees, slippage, stops, portfolio optimization, and market-data retrieval are out
+of scope. Existing positions must all have a positive caller-supplied market
+price so portfolio valuation cannot silently be incomplete.
