@@ -290,3 +290,125 @@ def test_non_decimal_market_price_is_rejected() -> None:
             [decision("AAPL", "BUY")],
             {"AAPL": 10},  # type: ignore[dict-item]
         )
+
+
+def test_successive_buys_cannot_spend_the_same_cash() -> None:
+    results = engine(
+        max_order_pct=D("1"), max_position_pct=D("1"), min_order_value=D("0")
+    ).evaluate(
+        Portfolio(cash=D("100")),
+        [decision("AAPL", "BUY"), decision("MSFT", "BUY")],
+        {"AAPL": D("60"), "MSFT": D("60")},
+    )
+
+    assert results[0].order_value == D("60")
+    assert results[1].status == RiskStatus.REJECTED
+    assert sum(result.order_value for result in results) <= D("100")
+
+
+def test_sell_then_buy_can_use_released_cash() -> None:
+    portfolio = Portfolio(
+        cash=D("0"),
+        positions=[Position(symbol="AAPL", quantity=D("5"), average_price=D("10"))],
+    )
+    results = engine(
+        max_order_pct=D("1"), max_position_pct=D("1"), min_order_value=D("0")
+    ).evaluate(
+        portfolio,
+        [decision("AAPL", "SELL"), decision("NVDA", "BUY")],
+        {"AAPL": D("20"), "NVDA": D("25")},
+    )
+
+    assert results[0].order_value == D("100")
+    assert results[1].status == RiskStatus.APPROVED
+    assert results[1].quantity == D("4")
+    assert results[1].order_value == D("100")
+
+
+def test_many_buys_never_exceed_initial_projected_cash() -> None:
+    symbols = ["AAPL", "MSFT", "NVDA", "AMD", "ORCL"]
+    results = engine(
+        max_order_pct=D("0.30"),
+        max_position_pct=D("0.50"),
+        min_order_value=D("0"),
+    ).evaluate(
+        Portfolio(cash=D("1000")),
+        [decision(symbol, "BUY") for symbol in symbols],
+        {symbol: D("100") for symbol in symbols},
+    )
+
+    assert sum(result.order_value for result in results) == D("1000")
+    assert results[-1].status == RiskStatus.REJECTED
+
+
+def test_projected_exposure_stays_within_limit_after_multiple_buys() -> None:
+    limits = RiskLimits(
+        max_order_pct=D("0.20"),
+        max_position_pct=D("0.25"),
+        min_order_value=D("0"),
+    )
+    results = RiskEngine(limits).evaluate(
+        Portfolio(cash=D("1000")),
+        [decision(symbol, "BUY") for symbol in ["AAPL", "MSFT", "NVDA"]],
+        {"AAPL": D("30"), "MSFT": D("40"), "NVDA": D("60")},
+    )
+
+    for result in results:
+        assert (
+            result.position_value_after
+            <= result.portfolio_value_before * limits.max_position_pct
+        )
+
+
+def test_batch_projection_does_not_mutate_input_portfolio() -> None:
+    portfolio = Portfolio(
+        cash=D("100"),
+        positions=[Position(symbol="AAPL", quantity=D("2"), average_price=D("15"))],
+    )
+    before = portfolio.model_dump()
+
+    engine(max_order_pct=D("1"), max_position_pct=D("1")).evaluate(
+        portfolio,
+        [decision("AAPL", "SELL"), decision("MSFT", "BUY")],
+        {"AAPL": D("20"), "MSFT": D("10")},
+    )
+
+    assert portfolio.model_dump() == before
+
+
+def test_batch_projection_is_deterministic() -> None:
+    portfolio = Portfolio(cash=D("100"))
+    decisions = [decision("AAPL", "BUY"), decision("MSFT", "BUY")]
+    prices = {"AAPL": D("60"), "MSFT": D("60")}
+    risk_engine = engine(
+        max_order_pct=D("1"), max_position_pct=D("1"), min_order_value=D("0")
+    )
+
+    assert risk_engine.evaluate(portfolio, decisions, prices) == risk_engine.evaluate(
+        portfolio, decisions, prices
+    )
+
+
+def test_reversing_decisions_changes_which_order_uses_scarce_cash() -> None:
+    portfolio = Portfolio(cash=D("100"))
+    prices = {"AAPL": D("60"), "MSFT": D("70")}
+    risk_engine = engine(
+        max_order_pct=D("1"), max_position_pct=D("1"), min_order_value=D("0")
+    )
+
+    aapl_first = risk_engine.evaluate(
+        portfolio,
+        [decision("AAPL", "BUY"), decision("MSFT", "BUY")],
+        prices,
+    )
+    msft_first = risk_engine.evaluate(
+        portfolio,
+        [decision("MSFT", "BUY"), decision("AAPL", "BUY")],
+        prices,
+    )
+
+    assert [result.symbol for result in aapl_first] == ["AAPL", "MSFT"]
+    assert [result.symbol for result in msft_first] == ["MSFT", "AAPL"]
+    assert aapl_first[0].order_value == D("60")
+    assert msft_first[0].order_value == D("70")
+    assert aapl_first[1].status == msft_first[1].status == RiskStatus.REJECTED

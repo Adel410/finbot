@@ -103,8 +103,11 @@ throughout, caps new orders and position exposure, respects available cash and
 minimum order value, optionally supports fractional shares, rejects short sales,
 and sells an existing position in full.
 
-The engine only proposes risk-approved order quantities; it does not execute
-orders and is not automatically connected to the AI pipeline. There is no broker
+The engine evaluates a decision batch sequentially against an internal projected
+portfolio: each approved buy consumes projected cash and each approved full sale
+releases it before the next decision. The input portfolio remains unchanged.
+It only proposes risk-approved order quantities; it does not execute orders and
+is not automatically connected to the AI pipeline. There is no broker
 or complete paper-trading engine in this sprint. Partial sales, leverage, margin,
 fees, slippage, stops, portfolio optimization, and market-data retrieval are out
 of scope. Existing positions must all have a positive caller-supplied market

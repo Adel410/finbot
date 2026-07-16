@@ -24,6 +24,8 @@
 - Keep the risk engine deterministic and independent from AI providers and networks.
 - Use `Decimal`, never `float`, for portfolio, order, price, and risk calculations.
 - Never let AI confidence bypass risk limits or make the risk engine execute orders.
+- Evaluate risk batches sequentially against an internal projected portfolio.
+- Never mutate the caller's Portfolio while projecting approved buys and sells.
 - Do not add real trading, broker access, external market data, or AI API calls
   unless a future task explicitly requests them.
 - Never execute a real financial transaction.

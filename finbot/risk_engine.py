@@ -1,10 +1,10 @@
+from dataclasses import dataclass
 from decimal import Decimal, ROUND_FLOOR
 
 from .models import (
     Action,
     Decision,
     Portfolio,
-    Position,
     RiskEvaluation,
     RiskLimits,
     RiskStatus,
@@ -21,6 +21,38 @@ class DuplicateDecisionError(RiskEngineError):
     """Raised when one evaluation contains conflicting symbol decisions."""
 
 
+@dataclass
+class _ProjectedPortfolio:
+    """Mutable internal projection; it never aliases the input Portfolio."""
+
+    cash: Decimal
+    quantities: dict[str, Decimal]
+
+    @classmethod
+    def from_portfolio(cls, portfolio: Portfolio) -> "_ProjectedPortfolio":
+        return cls(
+            cash=portfolio.cash,
+            quantities={
+                position.symbol: position.quantity for position in portfolio.positions
+            },
+        )
+
+    def get_quantity(self, symbol: str) -> Decimal:
+        return self.quantities.get(symbol, ZERO)
+
+    def apply(self, evaluation: RiskEvaluation) -> None:
+        if evaluation.status not in {RiskStatus.APPROVED, RiskStatus.REDUCED}:
+            return
+        if evaluation.requested_action == Action.BUY:
+            self.cash -= evaluation.order_value
+            self.quantities[evaluation.symbol] = (
+                self.get_quantity(evaluation.symbol) + evaluation.quantity
+            )
+        elif evaluation.requested_action == Action.SELL:
+            self.cash += evaluation.order_value
+            self.quantities.pop(evaluation.symbol, None)
+
+
 class RiskEngine:
     """Deterministically authorize and size long-only proposed orders."""
 
@@ -35,12 +67,19 @@ class RiskEngine:
     ) -> list[RiskEvaluation]:
         prices = self._normalize_prices(market_prices)
         self._validate_unique_decisions(decisions)
-        portfolio_value = self._portfolio_value(portfolio, prices)
+        self._validate_held_position_prices(portfolio, prices)
+        projected = _ProjectedPortfolio.from_portfolio(portfolio)
+        evaluations: list[RiskEvaluation] = []
 
-        return [
-            self._evaluate_decision(portfolio, decision, prices, portfolio_value)
-            for decision in decisions
-        ]
+        for decision in decisions:
+            portfolio_value = self._portfolio_value(projected, prices)
+            evaluation = self._evaluate_decision(
+                projected, decision, prices, portfolio_value
+            )
+            evaluations.append(evaluation)
+            projected.apply(evaluation)
+
+        return evaluations
 
     @staticmethod
     def _normalize_prices(prices: dict[str, Decimal]) -> dict[str, Decimal]:
@@ -61,30 +100,36 @@ class RiskEngine:
             raise DuplicateDecisionError("decisions must have unique symbols")
 
     @staticmethod
-    def _portfolio_value(
+    def _validate_held_position_prices(
         portfolio: Portfolio, prices: dict[str, Decimal]
-    ) -> Decimal:
-        total = portfolio.cash
+    ) -> None:
         for position in portfolio.positions:
             price = prices.get(position.symbol)
             if price is None or price <= ZERO:
                 raise RiskEngineError(
                     f"A positive market price is required for held position {position.symbol}"
                 )
-            total += position.quantity * price
+
+    @staticmethod
+    def _portfolio_value(
+        projected: _ProjectedPortfolio, prices: dict[str, Decimal]
+    ) -> Decimal:
+        total = projected.cash
+        for symbol, quantity in projected.quantities.items():
+            total += quantity * prices[symbol]
         return total
 
     def _evaluate_decision(
         self,
-        portfolio: Portfolio,
+        projected: _ProjectedPortfolio,
         decision: Decision,
         prices: dict[str, Decimal],
         portfolio_value: Decimal,
     ) -> RiskEvaluation:
         symbol = decision.symbol.strip().upper()
-        position = portfolio.get_position(symbol)
+        position_quantity = projected.get_quantity(symbol)
         price = prices.get(symbol)
-        position_value = position.quantity * price if position and price else ZERO
+        position_value = position_quantity * price if price else ZERO
 
         if decision.action == Action.HOLD:
             safe_price = price if price is not None and price > ZERO else None
@@ -99,17 +144,24 @@ class RiskEngine:
             )
         if decision.action == Action.SELL:
             return self._evaluate_sell(
-                symbol, position, price, portfolio_value, position_value
+                symbol,
+                position_quantity,
+                price,
+                portfolio_value,
+                position_value,
             )
         return self._evaluate_buy(
-            symbol, portfolio, position, price, portfolio_value, position_value
+            symbol,
+            projected.cash,
+            price,
+            portfolio_value,
+            position_value,
         )
 
     def _evaluate_buy(
         self,
         symbol: str,
-        portfolio: Portfolio,
-        position: Position | None,
+        cash: Decimal,
         price: Decimal | None,
         portfolio_value: Decimal,
         position_value: Decimal,
@@ -141,7 +193,7 @@ class RiskEngine:
                 portfolio_value,
                 position_value,
             )
-        if portfolio.cash == ZERO:
+        if cash == ZERO:
             return self._rejected(
                 symbol,
                 Action.BUY,
@@ -164,11 +216,11 @@ class RiskEngine:
                 position_value,
             )
 
-        allowed_value = min(max_order_value, remaining_capacity, portfolio.cash)
+        allowed_value = min(max_order_value, remaining_capacity, cash)
         constrained_by = None
-        if remaining_capacity < max_order_value and remaining_capacity <= portfolio.cash:
+        if remaining_capacity < max_order_value and remaining_capacity <= cash:
             constrained_by = "exposure"
-        elif portfolio.cash < max_order_value and portfolio.cash < remaining_capacity:
+        elif cash < max_order_value and cash < remaining_capacity:
             constrained_by = "cash"
 
         raw_quantity = allowed_value / price
@@ -226,12 +278,12 @@ class RiskEngine:
     def _evaluate_sell(
         self,
         symbol: str,
-        position: Position | None,
+        position_quantity: Decimal,
         price: Decimal | None,
         portfolio_value: Decimal,
         position_value: Decimal,
     ) -> RiskEvaluation:
-        if position is None:
+        if position_quantity == ZERO:
             return self._rejected(
                 symbol,
                 Action.SELL,
@@ -249,12 +301,12 @@ class RiskEngine:
                 portfolio_value,
                 position_value,
             )
-        order_value = position.quantity * price
+        order_value = position_quantity * price
         return RiskEvaluation(
             symbol=symbol,
             requested_action=Action.SELL,
             status=RiskStatus.APPROVED,
-            quantity=position.quantity,
+            quantity=position_quantity,
             price=price,
             order_value=order_value,
             reason="Full position sale approved.",
