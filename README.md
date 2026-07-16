@@ -123,6 +123,11 @@ the updated state. Rejected and no-action evaluations are skipped; inconsistent
 authorized evaluations fail individually without rolling back or stopping the
 rest of the batch.
 
+Trade identifiers are validated and unique within each execution batch. An
+invalid or duplicated identifier, or a failure in the injected ID factory,
+fails only the affected order before any financial state changes; later orders
+continue and factory error details are not exposed.
+
 The engine is independent from the AI pipeline, market-data retrieval, storage,
 and brokers. Its clock and trade-ID factory are injectable for deterministic
 tests. It performs no real transaction and currently models no fees, commissions,

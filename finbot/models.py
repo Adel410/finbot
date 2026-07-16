@@ -112,6 +112,14 @@ class Trade(BaseModel):
 
     normalize_symbol = field_validator("symbol", mode="before")(_uppercase_symbol)
 
+    @field_validator("trade_id")
+    @classmethod
+    def normalize_trade_id(cls, value: str) -> str:
+        trade_id = value.strip()
+        if not trade_id:
+            raise ValueError("trade_id must not be empty")
+        return trade_id
+
     @field_validator("executed_at")
     @classmethod
     def require_timezone(cls, value: datetime) -> datetime:
@@ -164,12 +172,17 @@ class ExecutionBatchResult(BaseModel):
 
     @model_validator(mode="after")
     def validate_execution_order(self) -> "ExecutionBatchResult":
+        trade_ids = [trade.trade_id for trade in self.trades]
+        if len(trade_ids) != len(set(trade_ids)):
+            raise ValueError(
+                "Trade identifiers must be unique within an execution batch."
+            )
         executed_ids = [
             result.trade_id
             for result in self.execution_results
             if result.execution_status == ExecutionStatus.EXECUTED
         ]
-        if executed_ids != [trade.trade_id for trade in self.trades]:
+        if executed_ids != trade_ids:
             raise ValueError("trades must match executed results in order")
         if self.initial_portfolio is self.updated_portfolio:
             raise ValueError("initial and updated portfolios must be distinct states")

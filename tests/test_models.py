@@ -243,3 +243,56 @@ def test_execution_batch_is_coherent() -> None:
         execution_results=[result],
     )
     assert batch.trades[0].trade_id == batch.execution_results[0].trade_id
+
+
+def _trade(trade_id: str, symbol: str) -> Trade:
+    return Trade(
+        trade_id=trade_id,
+        symbol=symbol,
+        side="BUY",
+        quantity=Decimal("1"),
+        price=Decimal("10"),
+        gross_value=Decimal("10"),
+        executed_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+    )
+
+
+def _execution_result(trade_id: str, symbol: str) -> ExecutionResult:
+    payload = execution_result_payload()
+    payload.update(
+        trade_id=trade_id,
+        symbol=symbol,
+        cash_after=Decimal("80"),
+        position_quantity_after=Decimal("1"),
+    )
+    return ExecutionResult(**payload)
+
+
+def test_execution_batch_rejects_duplicate_trade_ids() -> None:
+    trades = [_trade("duplicate", "AAPL"), _trade("duplicate", "MSFT")]
+    results = [
+        _execution_result("duplicate", "AAPL"),
+        _execution_result("duplicate", "MSFT"),
+    ]
+    with pytest.raises(ValidationError, match="must be unique"):
+        ExecutionBatchResult(
+            initial_portfolio=Portfolio(cash=Decimal("100")),
+            updated_portfolio=Portfolio(cash=Decimal("80")),
+            trades=trades,
+            execution_results=results,
+        )
+
+
+def test_execution_batch_accepts_distinct_trade_ids() -> None:
+    trades = [_trade("trade-1", "AAPL"), _trade("trade-2", "MSFT")]
+    results = [
+        _execution_result("trade-1", "AAPL"),
+        _execution_result("trade-2", "MSFT"),
+    ]
+    batch = ExecutionBatchResult(
+        initial_portfolio=Portfolio(cash=Decimal("100")),
+        updated_portfolio=Portfolio(cash=Decimal("80")),
+        trades=trades,
+        execution_results=results,
+    )
+    assert [trade.trade_id for trade in batch.trades] == ["trade-1", "trade-2"]

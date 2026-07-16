@@ -325,6 +325,97 @@ def test_naive_clock_is_rejected_before_execution() -> None:
         paper_engine.execute(Portfolio(cash=D("100")), [])
 
 
+def test_duplicate_trade_id_fails_only_the_later_order() -> None:
+    result = deterministic_engine("duplicate", "duplicate").execute(
+        Portfolio(cash=D("100")),
+        [
+            evaluation("AAPL", "BUY", "APPROVED", "2", "10", "20"),
+            evaluation("MSFT", "BUY", "APPROVED", "3", "10", "30"),
+        ],
+    )
+
+    first, second = result.execution_results
+    assert first.execution_status == ExecutionStatus.EXECUTED
+    assert second.execution_status == ExecutionStatus.FAILED
+    assert second.trade_id is None
+    assert second.reason == "Trade identifier is duplicated within this execution batch."
+    assert [trade.trade_id for trade in result.trades] == ["duplicate"]
+    assert result.updated_portfolio.cash == D("80")
+    assert result.updated_portfolio.get_position("AAPL") is not None
+    assert result.updated_portfolio.get_position("MSFT") is None
+
+
+def test_trade_id_factory_failure_is_sanitized_and_batch_continues() -> None:
+    calls = 0
+
+    def trade_id_factory() -> str:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise RuntimeError("sensitive internal detail")
+        return "trade-2"
+
+    result = PaperTradingEngine(
+        clock=lambda: EXECUTED_AT,
+        trade_id_factory=trade_id_factory,
+    ).execute(
+        Portfolio(cash=D("100")),
+        [
+            evaluation("AAPL", "BUY", "APPROVED", "2", "10", "20"),
+            evaluation("MSFT", "BUY", "APPROVED", "3", "10", "30"),
+        ],
+    )
+
+    first, second = result.execution_results
+    assert first.execution_status == ExecutionStatus.FAILED
+    assert first.reason == "Trade identifier generation failed."
+    assert "sensitive" not in first.reason
+    assert second.execution_status == ExecutionStatus.EXECUTED
+    assert [trade.trade_id for trade in result.trades] == ["trade-2"]
+    assert result.updated_portfolio.cash == D("70")
+    assert result.updated_portfolio.get_position("AAPL") is None
+    assert result.updated_portfolio.get_position("MSFT") is not None
+
+
+@pytest.mark.parametrize("invalid_trade_id", ["", "   "])
+def test_invalid_trade_id_fails_without_financial_mutation(
+    invalid_trade_id: str,
+) -> None:
+    result = deterministic_engine(invalid_trade_id).execute(
+        Portfolio(cash=D("100")),
+        [evaluation("AAPL", "BUY", "APPROVED", "2", "10", "20")],
+    )
+    execution = result.execution_results[0]
+    assert execution.execution_status == ExecutionStatus.FAILED
+    assert execution.trade_id is None
+    assert execution.reason == "Trade identifier is invalid."
+    assert result.trades == []
+    assert result.updated_portfolio == result.initial_portfolio
+
+
+def test_trade_id_is_requested_only_after_business_validation() -> None:
+    calls = 0
+
+    def trade_id_factory() -> str:
+        nonlocal calls
+        calls += 1
+        return f"trade-{calls}"
+
+    result = PaperTradingEngine(
+        clock=lambda: EXECUTED_AT,
+        trade_id_factory=trade_id_factory,
+    ).execute(
+        Portfolio(cash=D("20")),
+        [
+            evaluation("AAPL", "BUY", "APPROVED", "3", "10", "30"),
+            evaluation("MSFT", "BUY", "APPROVED", "1", "10", "10"),
+        ],
+    )
+    assert calls == 1
+    assert result.execution_results[0].execution_status == ExecutionStatus.FAILED
+    assert result.execution_results[1].trade_id == "trade-1"
+
+
 def test_engine_never_opens_network_socket(monkeypatch) -> None:
     monkeypatch.setattr(
         "socket.socket",

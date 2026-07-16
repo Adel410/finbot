@@ -26,6 +26,9 @@
 - Never let AI confidence bypass risk limits or make the risk engine execute orders.
 - Evaluate risk batches sequentially against an internal projected portfolio.
 - Never mutate the caller's Portfolio while projecting approved buys and sells.
+- Keep virtual trade identifiers unique within each execution batch.
+- Complete transaction validation before mutating paper-trading financial state.
+- Sanitize failures from injected dependencies and fail only the affected order.
 - Never mutate input Portfolio or RiskEvaluation objects during paper execution.
 - Keep paper-trading clocks and trade-ID factories injectable in tests.
 - Never execute a transaction rejected or ignored by the risk engine.

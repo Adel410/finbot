@@ -21,6 +21,11 @@ from .models import (
 
 ZERO = Decimal("0")
 AUTHORIZED_STATUSES = {RiskStatus.APPROVED, RiskStatus.REDUCED}
+INVALID_TRADE_ID_REASON = "Trade identifier is invalid."
+TRADE_ID_GENERATION_FAILED_REASON = "Trade identifier generation failed."
+DUPLICATE_TRADE_ID_REASON = (
+    "Trade identifier is duplicated within this execution batch."
+)
 
 
 @dataclass
@@ -77,9 +82,12 @@ class PaperTradingEngine:
         state = _ExecutionState.from_portfolio(portfolio)
         trades: list[Trade] = []
         results: list[ExecutionResult] = []
+        used_trade_ids: set[str] = set()
 
         for evaluation in evaluations:
-            result, trade = self._execute_evaluation(state, evaluation, executed_at)
+            result, trade = self._execute_evaluation(
+                state, evaluation, executed_at, used_trade_ids
+            )
             results.append(result)
             if trade is not None:
                 trades.append(trade)
@@ -96,6 +104,7 @@ class PaperTradingEngine:
         state: _ExecutionState,
         evaluation: RiskEvaluation,
         executed_at: datetime,
+        used_trade_ids: set[str],
     ) -> tuple[ExecutionResult, Trade | None]:
         symbol = evaluation.symbol
         cash_before = state.cash
@@ -123,9 +132,13 @@ class PaperTradingEngine:
             )
 
         if evaluation.requested_action == Action.BUY:
-            return self._execute_buy(state, evaluation, executed_at)
+            return self._execute_buy(
+                state, evaluation, executed_at, used_trade_ids
+            )
         if evaluation.requested_action == Action.SELL:
-            return self._execute_sell(state, evaluation, executed_at)
+            return self._execute_sell(
+                state, evaluation, executed_at, used_trade_ids
+            )
         return self._failed(
             evaluation,
             "An authorized HOLD evaluation cannot be executed.",
@@ -150,6 +163,7 @@ class PaperTradingEngine:
         state: _ExecutionState,
         evaluation: RiskEvaluation,
         executed_at: datetime,
+        used_trade_ids: set[str],
     ) -> tuple[ExecutionResult, Trade | None]:
         cash_before = state.cash
         quantity_before = state.quantity(evaluation.symbol)
@@ -161,11 +175,13 @@ class PaperTradingEngine:
                 quantity_before,
             )
 
-        trade = self._build_trade(evaluation, TradeSide.BUY, executed_at)
+        trade, trade_error = self._build_trade(
+            evaluation, TradeSide.BUY, executed_at, used_trade_ids
+        )
         if trade is None:
             return self._failed(
                 evaluation,
-                "Trade identifier is invalid.",
+                trade_error or INVALID_TRADE_ID_REASON,
                 cash_before,
                 quantity_before,
             )
@@ -205,6 +221,7 @@ class PaperTradingEngine:
         state: _ExecutionState,
         evaluation: RiskEvaluation,
         executed_at: datetime,
+        used_trade_ids: set[str],
     ) -> tuple[ExecutionResult, Trade | None]:
         cash_before = state.cash
         existing = state.positions.get(evaluation.symbol)
@@ -224,11 +241,13 @@ class PaperTradingEngine:
                 quantity_before,
             )
 
-        trade = self._build_trade(evaluation, TradeSide.SELL, executed_at)
+        trade, trade_error = self._build_trade(
+            evaluation, TradeSide.SELL, executed_at, used_trade_ids
+        )
         if trade is None:
             return self._failed(
                 evaluation,
-                "Trade identifier is invalid.",
+                trade_error or INVALID_TRADE_ID_REASON,
                 cash_before,
                 quantity_before,
             )
@@ -262,10 +281,18 @@ class PaperTradingEngine:
         evaluation: RiskEvaluation,
         side: TradeSide,
         executed_at: datetime,
-    ) -> Trade | None:
+        used_trade_ids: set[str],
+    ) -> tuple[Trade | None, str | None]:
         try:
-            return Trade(
-                trade_id=self.trade_id_factory(),
+            trade_id = self.trade_id_factory()
+        except Exception:
+            # The injected factory is an external boundary. Its details are not
+            # exposed, and this order fails without mutating financial state.
+            return None, TRADE_ID_GENERATION_FAILED_REASON
+
+        try:
+            trade = Trade(
+                trade_id=trade_id,
                 symbol=evaluation.symbol,
                 side=side,
                 quantity=evaluation.quantity,
@@ -274,7 +301,12 @@ class PaperTradingEngine:
                 executed_at=executed_at,
             )
         except ValidationError:
-            return None
+            return None, INVALID_TRADE_ID_REASON
+
+        if trade.trade_id in used_trade_ids:
+            return None, DUPLICATE_TRADE_ID_REASON
+        used_trade_ids.add(trade.trade_id)
+        return trade, None
 
     @staticmethod
     def _failed(
