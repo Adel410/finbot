@@ -1,13 +1,17 @@
 import pytest
+from datetime import datetime, timezone
 from decimal import Decimal
 from pydantic import ValidationError
 
 from finbot.models import (
     Decision,
+    ExecutionBatchResult,
+    ExecutionResult,
     Portfolio,
     Position,
     RiskEvaluation,
     RiskLimits,
+    Trade,
 )
 
 
@@ -148,3 +152,94 @@ def test_approved_evaluation_requires_positive_size() -> None:
             position_value_before=Decimal("0"),
             position_value_after=Decimal("0"),
         )
+
+
+def test_trade_is_valid_immutable_and_normalizes_symbol() -> None:
+    trade = Trade(
+        trade_id="trade-1",
+        symbol=" aapl ",
+        side="BUY",
+        quantity=Decimal("2"),
+        price=Decimal("10"),
+        gross_value=Decimal("20"),
+        executed_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+    )
+    assert trade.symbol == "AAPL"
+    with pytest.raises(ValidationError):
+        trade.quantity = Decimal("3")
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("quantity", Decimal("0")),
+        ("price", Decimal("0")),
+        ("gross_value", Decimal("19")),
+        ("executed_at", datetime(2026, 1, 1)),
+    ],
+)
+def test_trade_rejects_invalid_values(field: str, value: object) -> None:
+    payload = {
+        "trade_id": "trade-1",
+        "symbol": "AAPL",
+        "side": "BUY",
+        "quantity": Decimal("2"),
+        "price": Decimal("10"),
+        "gross_value": Decimal("20"),
+        "executed_at": datetime(2026, 1, 1, tzinfo=timezone.utc),
+    }
+    payload[field] = value
+    with pytest.raises(ValidationError):
+        Trade(**payload)
+
+
+def execution_result_payload() -> dict:
+    return {
+        "symbol": "AAPL",
+        "requested_action": "BUY",
+        "risk_status": "APPROVED",
+        "execution_status": "EXECUTED",
+        "trade_id": "trade-1",
+        "reason": "Executed.",
+        "cash_before": Decimal("100"),
+        "cash_after": Decimal("80"),
+        "position_quantity_before": Decimal("0"),
+        "position_quantity_after": Decimal("2"),
+    }
+
+
+def test_executed_result_requires_trade_id() -> None:
+    payload = execution_result_payload()
+    payload["trade_id"] = None
+    with pytest.raises(ValidationError, match="require a trade_id"):
+        ExecutionResult(**payload)
+
+
+def test_skipped_result_cannot_reference_trade() -> None:
+    payload = execution_result_payload()
+    payload["execution_status"] = "SKIPPED"
+    with pytest.raises(ValidationError, match="cannot reference"):
+        ExecutionResult(**payload)
+
+
+def test_execution_batch_is_coherent() -> None:
+    trade = Trade(
+        trade_id="trade-1",
+        symbol="AAPL",
+        side="BUY",
+        quantity=Decimal("2"),
+        price=Decimal("10"),
+        gross_value=Decimal("20"),
+        executed_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+    )
+    result = ExecutionResult(**execution_result_payload())
+    batch = ExecutionBatchResult(
+        initial_portfolio=Portfolio(cash=Decimal("100")),
+        updated_portfolio=Portfolio(
+            cash=Decimal("80"),
+            positions=[Position(symbol="AAPL", quantity=Decimal("2"), average_price=Decimal("10"))],
+        ),
+        trades=[trade],
+        execution_results=[result],
+    )
+    assert batch.trades[0].trade_id == batch.execution_results[0].trade_id

@@ -26,6 +26,10 @@
 - Never let AI confidence bypass risk limits or make the risk engine execute orders.
 - Evaluate risk batches sequentially against an internal projected portfolio.
 - Never mutate the caller's Portfolio while projecting approved buys and sells.
+- Never mutate input Portfolio or RiskEvaluation objects during paper execution.
+- Keep paper-trading clocks and trade-ID factories injectable in tests.
+- Never execute a transaction rejected or ignored by the risk engine.
+- Report execution inconsistencies without mutating state for that order.
 - Do not add real trading, broker access, external market data, or AI API calls
   unless a future task explicitly requests them.
 - Never execute a real financial transaction.

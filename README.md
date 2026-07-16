@@ -10,7 +10,7 @@ written to a daily file in `logs` and displayed in the console.
 An optional yfinance collector can retrieve daily closing data, and Grok is
 available through the official xAI SDK. No broker or real trading system is
 connected. FinBot remains an experimental research platform and cannot execute
-a trade.
+a real trade.
 
 ## Requirements
 
@@ -112,3 +112,18 @@ or complete paper-trading engine in this sprint. Partial sales, leverage, margin
 fees, slippage, stops, portfolio optimization, and market-data retrieval are out
 of scope. Existing positions must all have a positive caller-supplied market
 price so portfolio valuation cannot silently be incomplete.
+
+## Deterministic paper trading
+
+`PaperTradingEngine` applies only `APPROVED` or `REDUCED` risk evaluations to an
+isolated copy of a virtual portfolio. It processes the batch sequentially,
+records immutable virtual trades, recalculates weighted average purchase prices,
+supports full and partial sales, and returns both the unchanged initial state and
+the updated state. Rejected and no-action evaluations are skipped; inconsistent
+authorized evaluations fail individually without rolling back or stopping the
+rest of the batch.
+
+The engine is independent from the AI pipeline, market-data retrieval, storage,
+and brokers. Its clock and trade-ID factory are injectable for deterministic
+tests. It performs no real transaction and currently models no fees, commissions,
+slippage, persistence, PnL, or advanced performance statistics.
